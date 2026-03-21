@@ -8,7 +8,7 @@ variable "cidr_block" {
   type        = string
 }
 
-# FIX 1: cluster_name must be a variable — never hardcoded in tags
+
 variable "cluster_name" {
   description = "EKS cluster name — used in subnet tags for EKS service discovery"
   type        = string
@@ -35,7 +35,7 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
-# FIX 2: new variable for HA NAT control
+
 variable "single_nat_gateway" {
   description = "true = one shared NAT (dev, cheaper). false = one NAT per AZ (prod, HA)"
   type        = bool
@@ -48,7 +48,7 @@ variable "tags" {
   default     = {}
 }
 
-# FIX 7: validation — catch subnet/AZ count mismatch at plan time
+# validation — catch subnet/AZ count mismatch at plan time
 # not at apply time (which gives cryptic index errors)
 locals {
   validate_public = (
