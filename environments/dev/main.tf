@@ -58,3 +58,82 @@ module "eks" {
 
   tags = local.common_tags
 }
+
+# ── Step 3: ECR ───────────────────────────────────────────────────
+# node_role_arn comes from EKS module output — no manual ARN needed.
+# ci_role_arn is the IAM role GitHub Actions assumes via OIDC.
+module "ecr" {
+  source = "../../modules/ecr"
+
+  repo_name            = "easyshop-dev"        # unique per environment
+  image_tag_mutability = "MUTABLE"             # dev: ok to overwrite tags
+  max_image_count      = 5                     # keep fewer images in dev
+  force_delete         = true                  # allow destroy in dev
+  encryption_type      = "AES256"              # KMS not needed for dev
+
+  # EKS node role from Step 2 output — nodes can pull this image
+  node_role_arn = module.eks.node_role_arn     # ← wired from EKS output
+
+  # GitHub Actions IAM role — created separately (see ci_role below)
+  ci_role_arn   = aws_iam_role.github_actions.arn
+
+  tags = local.common_tags
+}
+
+# ── GitHub Actions OIDC IAM role ──────────────────────────────────
+# This allows GitHub Actions to assume an IAM role via OIDC —
+# no static AWS keys stored in GitHub secrets.
+# OIDC provider for GitHub is created once per AWS account.
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
+resource "aws_iam_role" "github_actions" {
+  name = "${var.cluster_name}-github-actions-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = data.aws_iam_openid_connect_provider.github.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringLike = {
+          # Scope to your repo only — set var.github_org and var.github_repo to your actual GitHub org/repo
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
+        }
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = local.common_tags
+}
+
+# ECR push permissions for GitHub Actions role
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  name = "ecr-push-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:PutImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload"
+      ]
+      Resource = "*"
+    }]
+  })
+}
