@@ -24,6 +24,11 @@ output "oidc_provider_url" {
   value       = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
 }
 
+output "node_role_arn" {
+  description = "ARN of worker node IAM role — for creating IRSA roles that nodes can assume"
+  value       = aws_iam_role.nodes.arn
+}
+
 output "node_security_group_id" {
   description = "Security group ID of worker nodes — for adding extra ingress rules"
   value       = aws_security_group.nodes.id
