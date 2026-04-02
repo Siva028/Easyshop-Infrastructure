@@ -26,7 +26,7 @@ output "oidc_provider_url" {
 
 output "node_role_arn" {
   description = "ARN of worker node IAM role — for creating IRSA roles that nodes can assume"
-  value       = aws_iam_role.nodes.arn
+  value       = aws_iam_role.node_role.arn
 }
 
 output "node_security_group_id" {
