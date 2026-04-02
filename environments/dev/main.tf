@@ -84,10 +84,10 @@ module "ecr" {
 # This allows GitHub Actions to assume an IAM role via OIDC —
 # no static AWS keys stored in GitHub secrets.
 # OIDC provider for GitHub is created once per AWS account.
-data "aws_iam_openid_connect_provider" "github" {
+resource "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea"]  # GitHub's OIDC thumbprint
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]  # GitHub's OIDC thumbprint
 }
 
 resource "aws_iam_role" "github_actions" {
