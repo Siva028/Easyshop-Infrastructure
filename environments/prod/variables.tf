@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "cluster_name" {
   description = "EKS cluster name — flows into VPC tags, EKS, ECR repo name"
   type        = string
-  default     = "easyshop-dev"
+  default     = "easyshop-prod"
 }
 
 variable "github_org" {
