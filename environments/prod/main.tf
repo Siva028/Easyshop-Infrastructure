@@ -42,14 +42,14 @@ module "eks" {
 
   # Larger nodes for prod
   system_node_instance_type = "t3.medium"
-  system_node_min           = 2
-  system_node_max           = 3
-  system_node_desired       = 2
+  system_min_size     = 2
+  system_max_size     = 3
+  system_desired_size = 2
 
   app_node_instance_type = "t3.large"    # ← larger than dev
-  app_node_min           = 2
-  app_node_max           = 6
-  app_node_desired       = 3
+  app_min_size     = 2
+  app_max_size     = 6
+  app_desired_size = 3
 
   tags = local.common_tags
 }
