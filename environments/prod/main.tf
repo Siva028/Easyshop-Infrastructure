@@ -7,16 +7,18 @@ locals {
     Environment = "prod"
     Project     = "easyshop"
     ManagedBy   = "terraform"
-    region      = var.aws_region
+    region      = var.aws_region  # needed for configure_kubectl output
   }
 }
 
-# ── VPC ───────────────────────────────────────────────────────────
+# ── Step 1: VPC ───────────────────────────────────────────────────
+# Creates the network. Outputs vpc_id, public_subnets, private_subnets.
+# cluster_name passed here so subnet tags are correct for EKS discovery.
 module "vpc" {
   source = "../../modules/vpc"
 
   vpc_name     = "${var.cluster_name}-vpc"
-  cidr_block   = "10.1.0.0/16"          # ← different CIDR from dev (10.0.x)
+  cidr_block   = "10.1.0.0/16"          
   cluster_name = var.cluster_name
 
   # 3 AZs for HA in prod
@@ -30,15 +32,18 @@ module "vpc" {
   tags = local.common_tags
 }
 
-# ── EKS ───────────────────────────────────────────────────────────
+# ── Step 2: EKS ───────────────────────────────────────────────────
+# module.vpc.* reads outputs from the VPC module above.
 module "eks" {
   source = "../../modules/eks"
 
   cluster_name       = var.cluster_name
-  cluster_version    = "1.31"
-  vpc_id             = module.vpc.vpc_id
-  public_subnet_ids  = module.vpc.public_subnets
-  private_subnet_ids = module.vpc.private_subnets
+  cluster_version    = "1.34"
+  vpc_id             = module.vpc.vpc_id           # ← from VPC output
+
+  # Control plane needs both — public for kubectl, private for nodes
+  public_subnet_ids  = module.vpc.public_subnets   # ← from VPC output
+  private_subnet_ids = module.vpc.private_subnets  # ← from VPC output
 
   # Larger nodes for prod
   system_node_instance_type = "t3.medium"
@@ -54,30 +59,33 @@ module "eks" {
   tags = local.common_tags
 }
 
-# ── ECR ───────────────────────────────────────────────────────────
+# ── Step 3: ECR ───────────────────────────────────────────────────
+# node_role_arn comes from EKS module output — no manual ARN needed.
+# ci_role_arn is the IAM role GitHub Actions assumes via OIDC.
 module "ecr" {
   source = "../../modules/ecr"
 
-  repo_name            = "easyshop-prod"  # ← separate repo from dev
+  repo_name            = "easyshop-prod"  # unique per environment
   image_tag_mutability = "IMMUTABLE"      # ← prod: tags cannot be overwritten
   max_image_count      = 20
   force_delete         = false            # ← protect prod images
   encryption_type      = "AES256"
 
-  node_role_arn = module.eks.node_role_arn
+  # EKS node role from Step 2 output — nodes can pull this image
+  node_role_arn = module.eks.node_role_arn   # ← wired from EKS output
+
+  # GitHub Actions OIDC role created below — GitHub can push to this repo
   ci_role_arn   = aws_iam_role.github_actions.arn
 
   tags = local.common_tags
 }
 
-# ── GitHub Actions OIDC role (prod) ───────────────────────────────
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-  ]
+# ── GitHub Actions OIDC IAM role ──────────────────────────────────
+# This allows GitHub Actions to assume an IAM role via OIDC —
+# no static AWS keys stored in GitHub secrets.
+# OIDC provider for GitHub is created once per AWS account.
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 resource "aws_iam_role" "github_actions" {
   name = "${var.cluster_name}-github-actions-role"
@@ -87,7 +95,7 @@ resource "aws_iam_role" "github_actions" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = aws_iam_openid_connect_provider.github.arn
+        Federated = data.aws_iam_openid_connect_provider.github.arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
@@ -104,25 +112,36 @@ resource "aws_iam_role" "github_actions" {
   tags = local.common_tags
 }
 
+# ECR push permissions for GitHub Actions role
 resource "aws_iam_role_policy" "github_actions_ecr" {
   name = "ecr-push-policy"
   role = aws_iam_role.github_actions.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:BatchGetImage",
-        "ecr:PutImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload"
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      # Account-level: required by docker login, cannot be repo-scoped
+      {
+        Sid      = "ECRAuthToken"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      # Repo-scoped: push/pull actions limited to THIS environment's repo only
+      {
+        Sid    = "ECRRepoActions"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload"
+        ]
+        Resource = module.ecr.repository_arn
+      }
+    ]
   })
 }

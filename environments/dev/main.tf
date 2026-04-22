@@ -19,7 +19,7 @@ module "vpc" {
 
   vpc_name           = "${var.cluster_name}-vpc"
   cidr_block         = "10.0.0.0/16"
-  cluster_name       = var.cluster_name   # ← fixes the subnet tag issue
+  cluster_name       = var.cluster_name  
 
   public_subnets     = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnets    = ["10.0.3.0/24", "10.0.4.0/24"]
@@ -32,7 +32,6 @@ module "vpc" {
 }
 
 # ── Step 2: EKS ───────────────────────────────────────────────────
-# VPC outputs feed directly into EKS inputs — no copy-pasting IDs.
 # module.vpc.* reads outputs from the VPC module above.
 module "eks" {
   source = "../../modules/eks"
@@ -69,7 +68,7 @@ module "ecr" {
   image_tag_mutability = "MUTABLE"             # dev: ok to overwrite tags
   max_image_count      = 5                     # keep fewer images in dev
   force_delete         = true                  # allow destroy in dev
-  encryption_type      = "AES256"              # KMS not needed for dev
+  encryption_type      = "AES256"             
 
   # EKS node role from Step 2 output — nodes can pull this image
   node_role_arn = module.eks.node_role_arn     # ← wired from EKS output
@@ -84,10 +83,8 @@ module "ecr" {
 # This allows GitHub Actions to assume an IAM role via OIDC —
 # no static AWS keys stored in GitHub secrets.
 # OIDC provider for GitHub is created once per AWS account.
-resource "aws_iam_openid_connect_provider" "github" {
+data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]  # GitHub's OIDC thumbprint
 }
 
 resource "aws_iam_role" "github_actions" {
@@ -98,7 +95,7 @@ resource "aws_iam_role" "github_actions" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = aws_iam_openid_connect_provider.github.arn
+        Federated = data.aws_iam_openid_connect_provider.github.arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
@@ -123,19 +120,29 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:BatchGetImage",
-        "ecr:PutImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload"
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      # Account-level: required by docker login, cannot be repo-scoped
+      {
+        Sid      = "ECRAuthToken"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      # Repo-scoped: push/pull actions limited to THIS environment's repo only
+      {
+        Sid    = "ECRRepoActions"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload"
+        ]
+        Resource = module.ecr.repository_arn
+      }
+    ]
   })
 }

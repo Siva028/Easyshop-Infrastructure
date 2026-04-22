@@ -11,11 +11,11 @@ terraform {
     }
   }
 
-    backend "s3" { 
-        bucket = "easyshop-tfstate"
-        key = "dev/terraform.tfstate"
-        region = "ap-south-1"
-        use_lockfile = true
-        encrypt = true
-    }
+  backend "s3" {
+    bucket       = "easyshop-tfstate"
+    key          = "bootstrap/terraform.tfstate" 
+    region       = "ap-south-1"
+    use_lockfile = true
+    encrypt      = true
+  }
 }
