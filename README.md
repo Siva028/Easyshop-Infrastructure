@@ -13,7 +13,7 @@ Terraform-based AWS infrastructure for the **EasyShop** e-commerce platform. Pro
 
 ### Dev Environment
 
-[![Dev Architecture](docs/easyshop-architecture-dev.png)](https://github.com/Siva028/Easyshop-Infrastructure/blob/main/docs/easyshop-architecture-dev.drawio.png)
+![Dev Architecture](docs/easyshop-architecture-dev.drawio.png)
 
 | Component | Configuration |
 |---|---|
@@ -25,7 +25,7 @@ Terraform-based AWS infrastructure for the **EasyShop** e-commerce platform. Pro
 
 ### Prod Environment
 
-[![Prod Architecture](docs/easyshop-architecture-prod.png)](https://github.com/Siva028/Easyshop-Infrastructure/blob/main/docs/easyshop-architecture-prod.drawio.png)
+![Prod Architecture](docs/easyshop-architecture-prod.drawio.png)
 
 | Component | Configuration |
 |---|---|
